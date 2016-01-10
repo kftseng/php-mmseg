@@ -325,6 +325,10 @@ PHP_FUNCTION(mmseg_segment)
         add_next_index_stringl(return_value, tok, len);
         seg->popToken(len);
     }
+
+    // delete seg so to release momery
+    mgr->clear();
+
     return ;
 }
 /* }}} */

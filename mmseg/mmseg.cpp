@@ -25,6 +25,11 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_mmseg_open, 0, 0, 1)
         ZEND_ARG_INFO(0, path)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_mmseg_segment, 0, 0, 2)
+        ZEND_ARG_INFO(0, mmseg_resource)
+        ZEND_ARG_INFO(0, content)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_mmseg_gendict, 0, 0, 2)
         ZEND_ARG_INFO(0, path)
         ZEND_ARG_INFO(0, target)
@@ -40,14 +45,18 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_mmseg_genthesaurus, 0, 0, 2)
         ZEND_ARG_INFO(0, target)
 ZEND_END_ARG_INFO()
                                 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_mmseg_close, 0, 0, 0)
+        ZEND_ARG_INFO(0, mmseg_resource)
+ZEND_END_ARG_INFO()
+
 /* {{{ mmseg_functions[]
  *
  * Every user visible function must have an entry in mmseg_functions[].
  */
 const zend_function_entry mmseg_functions[] = {
-	PHP_FE(mmseg_segment,	        NULL)
+	PHP_FE(mmseg_segment,	        arginfo_mmseg_segment)
 	PHP_FE(mmseg_open,	        arginfo_mmseg_open)
-	PHP_FE(mmseg_close,	        NULL)
+	PHP_FE(mmseg_close,	        arginfo_mmseg_close)
 	PHP_FE(mmseg_gendict,	        arginfo_mmseg_gendict)
 	PHP_FE(mmseg_gensynonyms,	arginfo_mmseg_gensynonyms)
 	PHP_FE(mmseg_genthesaurus,	arginfo_mmseg_genthesaurus)
@@ -234,7 +243,7 @@ PHP_FUNCTION(mmseg_segment)
 {
 	char *content = NULL;
 	int argc = ZEND_NUM_ARGS();
-	int content_len;
+	size_t content_len;
     SegmenterManager* mgr =  NULL;
     zval *mmseg_resource;
 
@@ -289,10 +298,6 @@ PHP_FUNCTION(mmseg_segment)
     } else if (argc = 2){
 	    if (zend_parse_parameters(argc TSRMLS_CC, "rs", &mmseg_resource, &content, &content_len) == FAILURE) 
             return;
-//        ZEND_FETCH_RESOURCE(mgr,SegmenterManager*,&mmseg_resource,-1,PHP_MMSEG_DESCRIPTOR_RES_NAME,le_mmseg_descriptor);
-//        ZEND_FETCH_RESOURCE(ib_link, ibase_db_link *, &link_arg, link_id, LE_LINK, le_link);
-
-//if you are sure that link_arg is a IS_RESOURCE type, then use :
           if ((mgr = (SegmenterManager *)zend_fetch_resource(Z_RES_P(mmseg_resource), PHP_MMSEG_DESCRIPTOR_RES_NAME, le_mmseg_descriptor)) == NULL) {
               RETURN_FALSE;
           }
@@ -317,7 +322,6 @@ PHP_FUNCTION(mmseg_segment)
             break;
         }
         //append new item
-//        add_next_index_stringl(return_value, tok, len, 1);
         add_next_index_stringl(return_value, tok, len);
         seg->popToken(len);
     }
@@ -341,10 +345,6 @@ PHP_FUNCTION(mmseg_open)
     if (nRet == 0) {
         // 注册这个资源
 
-// - REGISTER_RESOURCE(return_value, result, le_result);
-// + RETURN_RES(zend_register_resource(result, le_result);
-
-//        ZEND_REGISTER_RESOURCE(return_value,mgr,le_mmseg_descriptor);
         RETURN_RES(zend_register_resource(mgr, le_mmseg_descriptor));
     } else {
         RETURN_NULL();
@@ -361,21 +361,10 @@ PHP_FUNCTION(mmseg_close)
 	if (zend_parse_parameters(argc TSRMLS_CC, "r", &mmseg_resource) == FAILURE) 
 		return;
 
-//- ZEND_FETCH_RESOURCE2(ib_link, ibase_db_link *, &link_arg, link_id, LE_LINK, le_link, le_plink);
-
-//if you are sure that link_arg is a IS_RESOURCE type, then use :
-//+if ((ib_link = (ibase_db_link *)zend_fetch_resource2(Z_RES_P(link_arg), LE_LINK, le_link, le_plink)) == NULL) {
-//+    RETURN_FALSE;
-//+}
-
-//    ZEND_FETCH_RESOURCE(mgr,SegmenterManager*,&mmseg_resource,-1,PHP_MMSEG_DESCRIPTOR_RES_NAME,le_mmseg_descriptor);
 if ((mgr = (SegmenterManager *)zend_fetch_resource(Z_RES_P(mmseg_resource), PHP_MMSEG_DESCRIPTOR_RES_NAME, le_mmseg_descriptor)) == NULL) {
     RETURN_FALSE;
 }
 
-//- long handle = Z_RESVAL_P(zv);
-//+ long handle = Z_RES_P(zv)->handle;
-//    zend_hash_index_del(&EG(regular_list),Z_RESVAL_P(mmseg_resource));
     zend_hash_index_del(&EG(regular_list),Z_RES_P(mmseg_resource)->handle);
     RETURN_TRUE; 
 }
@@ -385,21 +374,15 @@ if ((mgr = (SegmenterManager *)zend_fetch_resource(Z_RES_P(mmseg_resource), PHP_
 PHP_FUNCTION(mmseg_gendict)
 {
     char *path;
-    int path_len;
+    size_t path_len;
     char *target;
-    int target_len;
+    size_t target_len;
 
     zend_bool b_plainText = 0;
 
     if (zend_parse_parameters (ZEND_NUM_ARGS() TSRMLS_CC, "ss", &path, &path_len, &target, &target_len)) {
         return;
     }
-
-cerr << "path:" << path_len << "\n";
-cerr << "target:"<<target_len << "\n";
-
-cerr << "path:" << path << "\n";
-cerr << "target:"<< target << "\n";
 
     UnigramCorpusReader ur;
     ur.open(path,b_plainText?"plain":NULL);
@@ -409,10 +392,8 @@ cerr << "target:"<< target << "\n";
     //check
     int i = 0;
 
-cerr << "count:" << ur.count() <<"\n";
     for(i=0;i<ur.count();i++)
     {
-cerr << "i:" << i << "\n";
         UnigramRecord* rec = ur.getAt(i);
 
         if(ud.exactMatch(rec->key.c_str()) == rec->count){
@@ -432,10 +413,10 @@ PHP_FUNCTION(mmseg_gensynonyms)
 	int argc = ZEND_NUM_ARGS();
 
 	char *path;
-	int path_len;
+	size_t path_len;
 
     char *target;
-    int target_len;
+    size_t target_len;
 
     zend_bool b_plainText = 0;
 
@@ -458,10 +439,10 @@ PHP_FUNCTION(mmseg_genthesaurus)
 	int argc = ZEND_NUM_ARGS();
 
 	char *path;
-	int path_len;
+	size_t path_len;
 
     char *target;
-    int target_len;
+    size_t target_len;
 
     zend_bool b_plainText = 0;
 

@@ -46,6 +46,7 @@ PHP_MINFO_FUNCTION(mmseg);
 
 // 使用全局的mmseg数据进行分词
 PHP_FUNCTION(mmseg_segment);
+PHP_FUNCTION(mmseg_split);
 
 // 初始化mmseg配置，或者mmseg句柄
 PHP_FUNCTION(mmseg_open);

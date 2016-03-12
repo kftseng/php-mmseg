@@ -30,6 +30,11 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_mmseg_segment, 0, 0, 2)
         ZEND_ARG_INFO(0, content)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO_EX(arginfo_mmseg_split, 0, 0, 2)
+        ZEND_ARG_INFO(0, mmseg_resource)
+        ZEND_ARG_INFO(0, content)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_mmseg_gendict, 0, 0, 2)
         ZEND_ARG_INFO(0, path)
         ZEND_ARG_INFO(0, target)
@@ -55,6 +60,7 @@ ZEND_END_ARG_INFO()
  */
 const zend_function_entry mmseg_functions[] = {
 	PHP_FE(mmseg_segment,	        arginfo_mmseg_segment)
+	PHP_FE(mmseg_split,	        arginfo_mmseg_split)
 	PHP_FE(mmseg_open,	        arginfo_mmseg_open)
 	PHP_FE(mmseg_close,	        arginfo_mmseg_close)
 	PHP_FE(mmseg_gendict,	        arginfo_mmseg_gendict)
@@ -237,13 +243,13 @@ PHP_MINFO_FUNCTION(mmseg)
    follow this convention for the convenience of others editing your code.
 */
 
-/* {{{ proto array mmseg_segment(string content)
+/* {{{ proto array mmseg_split(string content)
     */
-PHP_FUNCTION(mmseg_segment)
+PHP_FUNCTION(mmseg_split)
 {
-	char *content = NULL;
-	int argc = ZEND_NUM_ARGS();
-	size_t content_len;
+    char *content = NULL;
+    int argc = ZEND_NUM_ARGS();
+    size_t content_len;
     SegmenterManager* mgr =  NULL;
     zval *mmseg_resource;
 
@@ -322,8 +328,167 @@ PHP_FUNCTION(mmseg_segment)
             break;
         }
         //append new item
+        if (*tok != '\r' && *tok != '\n')
+            add_next_index_stringl(return_value, tok, len);
+        seg->popToken(len);
+    }
+
+    // delete seg so to release momery
+    mgr->clear();
+
+    return ;
+}
+
+/* {{{ proto array mmseg_segment(string content)
+    */
+PHP_FUNCTION(mmseg_segment)
+{
+    char *content = NULL;
+    int argc = ZEND_NUM_ARGS();
+    size_t content_len;
+    SegmenterManager* mgr =  NULL;
+    zval *mmseg_resource;
+
+    zend_bool autoreload = INI_BOOL("mmseg.autoreload");
+
+    // 判断传入参数的数量
+    if (argc == 1) 
+    {
+        struct stat st;
+        if (zend_parse_parameters(argc TSRMLS_CC, "s", &content, &content_len) == FAILURE) 
+	    return;
+        // 如果使用全局的字典文件，在这里看一下是否需要判断文件是否有改变
+        if (1 == autoreload) {
+            // 文件名
+            string dict_file_path;
+            dict_file_path = INI_STR("mmseg.dict_dir");
+            dict_file_path.append("/uni.lib");
+
+            if (stat(dict_file_path.c_str(), &st) == 0) {
+                if (st.st_mtime != MMSEG_G(dict_mtime)) {
+                    MMSEG_G(dict_mtime) = st.st_mtime;
+                    SegmenterManager* oldMgr = (SegmenterManager*)MMSEG_G(mgr);
+                    SegmenterManager* newMgr;
+                    newMgr = new SegmenterManager();
+                    int nRet = 0;
+                    nRet = newMgr->init(INI_STR("mmseg.dict_dir"));
+                    if (nRet == 0) {
+                        if (oldMgr) {
+                            MMSEG_LOG("trying to delete old mgr");
+                            delete oldMgr;
+                            oldMgr = NULL;
+                        }
+                        
+                        MMSEG_LOG("load dictionary on change");
+                        MMSEG_G(mgr) = newMgr;
+                    } else {
+                        // no change. still use oldMgr
+                        MMSEG_LOG("no change, initialize new dict file failed");
+                        newMgr = NULL;
+                    }
+                } else {
+                    MMSEG_LOG(ctime(&st.st_mtime));
+                    MMSEG_LOG(ctime(&MMSEG_G(dict_mtime)));
+                    MMSEG_LOG("no change, dict file no change");
+                    // no change, still  use old oldMgr
+                }
+            } else {
+                MMSEG_LOG("no change, stat new dict file failed");
+            }
+        } else {
+            MMSEG_LOG("no change, autoreload not set");
+        }
+        mgr = (SegmenterManager*) MMSEG_G(mgr);
+    } else if (argc = 2){
+	    if (zend_parse_parameters(argc TSRMLS_CC, "rs", &mmseg_resource, &content, &content_len) == FAILURE) 
+            return;
+          if ((mgr = (SegmenterManager *)zend_fetch_resource(Z_RES_P(mmseg_resource), PHP_MMSEG_DESCRIPTOR_RES_NAME, le_mmseg_descriptor)) == NULL) {
+              RETURN_FALSE;
+          }
+    } else {
+        return;
+    }
+
+    if (mgr == NULL) {
+        RETURN_NULL();
+    }
+
+    Segmenter* seg = mgr->getSegmenter();
+    u4 content_length = content_len;
+    seg->setBuffer((u1*)content, content_length);
+    array_init(return_value);
+
+    // copy from libmmseg
+    u2 len = 0, symlen = 0;
+    u2 kwlen = 0, kwsymlen = 0;
+
+    //check 1st token.
+    char txtHead[3] = {239,187,191};
+    char* tok = (char*)seg->peekToken(len, symlen);
+    seg->popToken(len);
+
+    if (seg->isSentenceEnd())
+    {
+        do
+        {
+            char* kwtok = (char*)seg->peekToken(kwlen , kwsymlen,1);
+            if (kwsymlen)
+            {
+                add_next_index_stringl(return_value, kwtok, kwsymlen);
+            }
+        }
+        while(kwsymlen);
+    }
+
+    if(len == 3 && memcmp(tok,txtHead,sizeof(char)*3) == 0)
+    {
+                //check is 0xFEFF
+                //do nothing
+    }
+    else
+    {
+        if (*tok != '\r' && *tok != '\n')
+            add_next_index_stringl(return_value, tok, symlen);
+    }
+    // endof copy
+
+    while(1)
+    {
+        u2 len = 0, symlen = 0;
+        char* tok = (char*)seg->peekToken(len,symlen);
+        if(!tok || !*tok || !len){
+            break;
+        }
+        //append new item
         add_next_index_stringl(return_value, tok, len);
         seg->popToken(len);
+
+        //copy from libmmseg
+        if (seg->isSentenceEnd())
+        {
+            do
+            {
+                char* kwtok = (char*)seg->peekToken(kwlen , kwsymlen, 1);
+                if (kwsymlen)
+                    add_next_index_stringl(return_value, kwtok, kwsymlen);
+                }
+                while (kwsymlen);
+            }
+
+            if (*tok == '\r' || *tok == '\n')
+                continue;
+
+            {
+            const char* thesaurus_ptr = seg->thesaurus(tok, symlen);
+
+            while (thesaurus_ptr && *thesaurus_ptr) 
+            {
+                len = strlen(thesaurus_ptr);
+                add_next_index_stringl(return_value, thesaurus_ptr, len);
+                thesaurus_ptr += len + 1; //move next
+            }
+        }
+        // end of copy
     }
 
     // delete seg so to release momery

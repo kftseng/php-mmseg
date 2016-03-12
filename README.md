@@ -7,7 +7,7 @@ php-mmseg
 
 ## 依赖
 
-1. php5.4 以上版本 （其他版本目前还没有测试）
+1. php7.0 以上版本 （不支援 7.0 以下版本）
 2. LibMMSeg 3.2.14版本 http://www.coreseek.cn/opensource/mmseg/
 ```
     关于mmseg的安装，参考 http://www.coreseek.cn/products/products-install/

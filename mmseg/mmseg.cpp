@@ -295,6 +295,7 @@ PHP_FUNCTION(mmseg_segment)
         } else {
             MMSEG_LOG("no change, autoreload not set");
         }
+    mgr = (SegmenterManager*) MMSEG_G(mgr);
     } else if (argc = 2){
 	    if (zend_parse_parameters(argc TSRMLS_CC, "rs", &mmseg_resource, &content, &content_len) == FAILURE) 
             return;
@@ -305,7 +306,6 @@ PHP_FUNCTION(mmseg_segment)
         return;
     }
 
-    mgr = (SegmenterManager*) MMSEG_G(mgr);
     if (mgr == NULL) {
         RETURN_NULL();
     }
